@@ -15,6 +15,7 @@ const AGES = ["中学生以下", "高校生", "大学生", "大人"];
 const AGE_ALIAS = { "小学生以下": "中学生以下", "中学生": "中学生以下" };
 const GENDERS = ["男", "女", "混合"];
 const TICKET_MAX = 20;
+const LATE_MS = 3 * 60000; // これを超えて待たせている整理券は赤く表示する
 const DEFAULT_SETTINGS = { price: 400, totalCost: 55852, disabledTickets: [] };
 
 // ---- Firebase ----
@@ -305,8 +306,10 @@ function renderTickets() {
   for (const o of list) {
     const isNew = ticketsPrimed && !seenTickets.has(o.id);
     seenTickets.add(o.id);
-    const mins = Math.floor((Date.now() - o.createdAt) / 60000);
-    const card = el("button", { type: "button", class: "ticket" + (o.ticket == null ? " noticket" : "") }, [
+    const waited = Date.now() - o.createdAt;
+    const mins = Math.floor(waited / 60000);
+    const late = waited > LATE_MS;
+    const card = el("button", { type: "button", class: "ticket" + (o.ticket == null ? " noticket" : "") + (late ? " late" : "") }, [
       el("div", { class: "num", text: o.ticket == null ? "番号なし" : String(o.ticket) }),
       el("div", { class: "sub", text: `${o.cups}杯・${mins}分待ち` }),
     ]);
@@ -801,7 +804,7 @@ function renderAll() {
   renderSummary();
   renderSync();
 }
-setInterval(() => { if (!$("main-view").hidden) renderTickets(); }, 30000);
+setInterval(() => { if (!$("main-view").hidden) renderTickets(); }, 10000);
 
 // ---- 設定 ----
 $("save-price").onclick = () => {

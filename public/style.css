@@ -254,3 +254,9 @@ button:active:not(:disabled) { transform: scale(.96); }
 .modal-actions button.primary { background: var(--primary); color: var(--primary-text); border: 0; font-weight: 700; }
 .modal-actions button.danger { background: none; border-color: var(--danger); color: var(--danger); }
 .ticket.noticket .num { font-size: 1.2rem; line-height: 2.2rem; }
+
+/* 3分を超えて待たせている整理券 */
+@keyframes late-glow { 50% { box-shadow: 0 0 0 4px rgba(198, 40, 40, .25); } }
+.ticket.late { border-color: var(--danger); border-width: 3px; background: var(--warn-bg); animation: late-glow 2s ease-in-out infinite; }
+.ticket.late .num { color: var(--danger); }
+.ticket.late .sub { color: var(--danger); font-weight: 700; }
