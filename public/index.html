@@ -42,18 +42,12 @@
           <span>待ち <b id="reg-waiting">0</b> 件</span>
         </div>
 
-        <div class="cups-row">
-          <div>
-            <div class="field-label">杯数</div>
-            <div class="stepper">
-              <button type="button" id="cups-minus" aria-label="1杯減らす">−</button>
-              <output id="cups-value">1</output>
-              <button type="button" id="cups-plus" aria-label="1杯増やす">＋</button>
-            </div>
-          </div>
-          <div class="total-box">
-            <div class="field-label">合計</div>
-            <div id="total-amount" class="total">¥400</div>
+        <div class="field">
+          <div class="field-label">杯数</div>
+          <div class="stepper">
+            <button type="button" id="cups-minus" aria-label="1杯減らす">−</button>
+            <output id="cups-value">1</output>
+            <button type="button" id="cups-plus" aria-label="1杯増やす">＋</button>
           </div>
         </div>
 
@@ -71,6 +65,11 @@
           <button type="button" id="child-toggle" class="toggle" aria-pressed="false">子連れ: いいえ</button>
         </div>
 
+
+        <div class="total-box">合計 <span id="total-amount" class="total">¥400</span></div>
+
+        <button type="button" id="confirm-btn" class="primary big" disabled>年代と性別を選んでください</button>
+
         <details class="rules">
           <summary>属性の付け方</summary>
           <ul>
@@ -82,8 +81,6 @@
             <li>教員・保護者は「大人」</li>
           </ul>
         </details>
-
-        <button type="button" id="confirm-btn" class="primary big" disabled>年代と性別を選んでください</button>
       </section>
 
       <!-- 整理券 -->
