@@ -70,6 +70,15 @@ function write(promise) {
   promise.catch((e) => { console.error(e); toast("保存に失敗しました: " + e.code); });
 }
 
+// 動きを減らす設定の端末ではアニメーションしない
+const MOTION_OK = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function replay(node, cls) {
+  if (!MOTION_OK || !node) return;
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+}
+
 let toastTimer = null;
 function toast(msg, action = null) {
   const t = $("toast");
@@ -84,17 +93,26 @@ function toast(msg, action = null) {
     t.appendChild(b);
   }
   t.hidden = false;
+  replay(t, "toast-in");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, action ? 6000 : 3000);
 }
 
+let modalTimer = null;
 function openModal(build) {
+  clearTimeout(modalTimer);
   const box = $("modal-content");
   box.innerHTML = "";
   build(box);
+  $("modal").classList.remove("closing");
   $("modal").hidden = false;
 }
-function closeModal() { $("modal").hidden = true; }
+function closeModal() {
+  const m = $("modal");
+  if (!MOTION_OK) { m.hidden = true; return; }
+  m.classList.add("closing");
+  modalTimer = setTimeout(() => { m.hidden = true; m.classList.remove("closing"); }, 180);
+}
 $("modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
 
 function el(tag, attrs = {}, children = []) {
@@ -186,6 +204,7 @@ document.querySelectorAll(".tabbar button").forEach((b) => {
   b.addEventListener("click", () => {
     document.querySelectorAll(".tabbar button").forEach((x) => x.classList.toggle("active", x === b));
     document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== "tab-" + b.dataset.tab; });
+    replay($("tab-" + b.dataset.tab), "tab-enter");
     window.scrollTo(0, 0);
     if (b.dataset.tab === "summary") openSummary();
     else summaryUI.visible = false;
@@ -213,9 +232,11 @@ $("cups-minus").onclick = () => { state.form.cups = Math.max(1, state.form.cups 
 $("cups-plus").onclick = () => { state.form.cups = Math.min(99, state.form.cups + 1); renderForm(); };
 $("child-toggle").onclick = () => { state.form.withChild = !state.form.withChild; renderForm(); };
 
+const formShown = { cups: null, amount: null };
 function renderForm() {
   const f = state.form;
   $("cups-value").textContent = f.cups;
+  if (formShown.cups !== null && formShown.cups !== f.cups) replay($("cups-value"), "bump");
   for (const [cid, key] of [["age-choices", "age"], ["gender-choices", "gender"]]) {
     $(cid).querySelectorAll("button").forEach((b) => {
       b.setAttribute("aria-pressed", String(String(f[key]) === b.dataset.value));
@@ -225,6 +246,9 @@ function renderForm() {
   $("child-toggle").textContent = "子連れ: " + (f.withChild ? "はい" : "いいえ");
   const amount = state.settings.price * f.cups;
   $("total-amount").textContent = yen(amount);
+  if (formShown.amount !== null && formShown.amount !== amount) replay($("total-amount"), "bump");
+  formShown.cups = f.cups;
+  formShown.amount = amount;
   const ok = f.age && f.gender;
   $("confirm-btn").disabled = !ok || !state.loaded;
   $("confirm-btn").textContent = !state.loaded ? "記録を読み込み中…" : ok ? `会計を確定(${yen(amount)})` : "年代と性別を選んでください";
@@ -268,19 +292,31 @@ $("confirm-btn").onclick = () => {
 };
 
 // ---- 整理券 ----
+const seenTickets = new Set();
+let ticketsPrimed = false;
 function renderTickets() {
   const list = waiting();
   const grid = $("ticket-grid");
   grid.innerHTML = "";
   for (const o of list) {
+    const isNew = ticketsPrimed && !seenTickets.has(o.id);
+    seenTickets.add(o.id);
     const mins = Math.floor((Date.now() - o.createdAt) / 60000);
     const card = el("button", { type: "button", class: "ticket" + (o.ticket == null ? " noticket" : "") }, [
       el("div", { class: "num", text: o.ticket == null ? "番号なし" : String(o.ticket) }),
       el("div", { class: "sub", text: `${o.cups}杯・${mins}分待ち` }),
     ]);
-    card.onclick = () => markHanded(o);
+    if (isNew && MOTION_OK) card.classList.add("pop");
+    card.onclick = () => {
+      if (card.disabled) return;
+      card.disabled = true;
+      if (!MOTION_OK) return markHanded(o);
+      card.classList.add("leaving");
+      setTimeout(() => markHanded(o), 220);
+    };
     grid.appendChild(card);
   }
+  ticketsPrimed = state.loaded;
   $("ticket-empty").hidden = list.length > 0;
   const used = usedTickets();
   const free = $("free-tickets");
