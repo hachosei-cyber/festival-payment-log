@@ -10,9 +10,10 @@ import {
 import { firebaseConfig, allowedEmails } from "./firebase-config.js";
 
 // ---- 定数 ----
-const AGES = ["小学生以下", "中学生", "高校生", "大学生", "大人"];
+const AGES = ["中学生以下", "高校生", "大学生", "大人"];
+// 2026-10-31 に「小学生以下」「中学生」を「中学生以下」にまとめた。古い記録も読み込み時に合わせる
+const AGE_ALIAS = { "小学生以下": "中学生以下", "中学生": "中学生以下" };
 const GENDERS = ["男", "女", "混合"];
-const DEPOSITS = [500, 1000, 2000, 5000, 10000];
 const TICKET_MAX = 20;
 const DEFAULT_SETTINGS = { price: 400, totalCost: 55852 };
 
@@ -35,7 +36,7 @@ const settingsRef = doc(db, "settings", "main");
 const state = {
   orders: [],          // {id, ...data, createdAt: Date, handedAt: Date|null, pending: bool}
   settings: { ...DEFAULT_SETTINGS },
-  form: { cups: 1, age: null, gender: null, withChild: false, deposit: null },
+  form: { cups: 1, age: null, gender: null, withChild: false },
   unsubs: [],
   fromCache: true,
   loaded: false,       // 最初のデータが届くまで会計を止める(番号の重複防止)
@@ -163,6 +164,7 @@ function subscribe() {
       const x = d.data();
       return {
         id: d.id, ...x,
+        age: AGE_ALIAS[x.age] ?? x.age,
         createdAt: toDate(x.createdAt) || new Date(0),
         handedAt: toDate(x.handedAt),
         pending: d.metadata.hasPendingWrites,
@@ -206,7 +208,6 @@ function buildChoices(containerId, values, key, label = (v) => v) {
 }
 buildChoices("age-choices", AGES, "age");
 buildChoices("gender-choices", GENDERS, "gender");
-buildChoices("deposit-choices", DEPOSITS, "deposit", (v) => v.toLocaleString("ja-JP") + "円");
 
 $("cups-minus").onclick = () => { state.form.cups = Math.max(1, state.form.cups - 1); renderForm(); };
 $("cups-plus").onclick = () => { state.form.cups = Math.min(99, state.form.cups + 1); renderForm(); };
@@ -215,7 +216,7 @@ $("child-toggle").onclick = () => { state.form.withChild = !state.form.withChild
 function renderForm() {
   const f = state.form;
   $("cups-value").textContent = f.cups;
-  for (const [cid, key] of [["age-choices", "age"], ["gender-choices", "gender"], ["deposit-choices", "deposit"]]) {
+  for (const [cid, key] of [["age-choices", "age"], ["gender-choices", "gender"]]) {
     $(cid).querySelectorAll("button").forEach((b) => {
       b.setAttribute("aria-pressed", String(String(f[key]) === b.dataset.value));
     });
@@ -224,9 +225,6 @@ function renderForm() {
   $("child-toggle").textContent = "子連れ: " + (f.withChild ? "はい" : "いいえ");
   const amount = state.settings.price * f.cups;
   $("total-amount").textContent = yen(amount);
-  if (f.deposit == null) $("change-amount").textContent = "—";
-  else if (f.deposit < amount) $("change-amount").textContent = "不足 " + yen(amount - f.deposit);
-  else $("change-amount").textContent = yen(f.deposit - amount);
   const ok = f.age && f.gender;
   $("confirm-btn").disabled = !ok || !state.loaded;
   $("confirm-btn").textContent = !state.loaded ? "記録を読み込み中…" : ok ? `会計を確定(${yen(amount)})` : "年代と性別を選んでください";
@@ -253,7 +251,7 @@ $("confirm-btn").onclick = () => {
     updatedAt: Timestamp.fromDate(now),
   };
   write(setDoc(ref, data));
-  state.form = { cups: 1, age: null, gender: null, withChild: false, deposit: null };
+  state.form = { cups: 1, age: null, gender: null, withChild: false };
   renderForm();
 
   openModal((box) => {
@@ -363,7 +361,7 @@ function openEdit(o) {
       sync();
       return c;
     };
-    box.appendChild(el("div", { class: "field" }, [el("div", { class: "field-label", text: "年代" }), mkChoices(AGES, "age", "five")]));
+    box.appendChild(el("div", { class: "field" }, [el("div", { class: "field-label", text: "年代" }), mkChoices(AGES, "age", "four")]));
     box.appendChild(el("div", { class: "field" }, [el("div", { class: "field-label", text: "性別" }), mkChoices(GENDERS, "gender", "three")]));
 
     const child = el("button", { type: "button", class: "toggle" });

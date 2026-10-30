@@ -1,5 +1,5 @@
 // 画面ファイルを端末に保存し、電波がなくてもアプリを開けるようにする
-const CACHE = "register-v05";
+const CACHE = "register-v06";
 const SHELL = ["./", "index.html", "style.css", "app.js", "firebase-config.js", "manifest.json", "icon.png", "apple-touch-icon.png", "favicon.png", "logo.png"];
 const SDK = ["firebase-app.js", "firebase-auth.js", "firebase-firestore.js"]
   .map((f) => "https://www.gstatic.com/firebasejs/11.0.2/" + f);

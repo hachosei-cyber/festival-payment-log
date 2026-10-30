@@ -42,18 +42,24 @@
           <span>待ち <b id="reg-waiting">0</b> 件</span>
         </div>
 
-        <div class="field">
-          <div class="field-label">杯数</div>
-          <div class="stepper">
-            <button type="button" id="cups-minus" aria-label="1杯減らす">−</button>
-            <output id="cups-value">1</output>
-            <button type="button" id="cups-plus" aria-label="1杯増やす">＋</button>
+        <div class="cups-row">
+          <div>
+            <div class="field-label">杯数</div>
+            <div class="stepper">
+              <button type="button" id="cups-minus" aria-label="1杯減らす">−</button>
+              <output id="cups-value">1</output>
+              <button type="button" id="cups-plus" aria-label="1杯増やす">＋</button>
+            </div>
+          </div>
+          <div class="total-box">
+            <div class="field-label">合計</div>
+            <div id="total-amount" class="total">¥400</div>
           </div>
         </div>
 
         <div class="field">
           <div class="field-label">年代</div>
-          <div class="choices five" id="age-choices"></div>
+          <div class="choices four" id="age-choices"></div>
         </div>
 
         <div class="field">
@@ -72,19 +78,10 @@
             <li>買った人で決める。買っていない同行者は数えない</li>
             <li>年代が混ざるときは人数の多い層。同数なら年上の層</li>
             <li>男女どちらも含むなら「混合」</li>
-            <li>小学生以下の子どもと大人が一緒なら「子連れ: はい」</li>
+            <li>中学生以下の子どもと大人が一緒なら「子連れ: はい」</li>
             <li>教員・保護者は「大人」</li>
           </ul>
         </details>
-
-        <div class="total-box">
-          <div>合計 <span id="total-amount" class="total">¥400</span></div>
-          <div class="deposit">
-            <div class="field-label">お預かり(任意)</div>
-            <div class="choices deposit-choices" id="deposit-choices"></div>
-            <div>お釣り <span id="change-amount" class="change">—</span></div>
-          </div>
-        </div>
 
         <button type="button" id="confirm-btn" class="primary big" disabled>年代と性別を選んでください</button>
       </section>

@@ -185,3 +185,17 @@ button:not(.primary):not(.danger) { cursor: pointer; }
   #tab-summary .anim.play { animation: none; }
   .be-fill { transition: none; }
 }
+
+/* 会計画面を1画面に収める(2026-10-31) */
+#tab-register .field { margin: 8px 0; }
+#tab-register .field-label { margin-bottom: 4px; }
+.cups-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin: 6px 0 8px; }
+.cups-row .stepper { grid-template-columns: 56px 1fr 56px; }
+.cups-row .stepper button { height: 52px; }
+.cups-row .total-box { margin: 0; padding: 6px 12px; min-width: 120px; text-align: right; }
+.cups-row .total { font-size: 1.7rem; line-height: 1.2; }
+.choices.four { grid-template-columns: repeat(4, 1fr); }
+#tab-register .choices button, #tab-register .toggle { min-height: 48px; }
+#tab-register .choices.four button { font-size: 0.9rem; padding: 0 2px; }
+#tab-register .rules { margin: 4px 0 8px; }
+#tab-register .stat-line { margin-bottom: 4px; }
