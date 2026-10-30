@@ -85,7 +85,7 @@
 
       <!-- 整理券 -->
       <section id="tab-tickets" class="tab" hidden>
-        <p class="muted">商品を渡したら番号をタップ → 受け渡し済みになり、番号が空きます。</p>
+        <p class="muted">商品を渡すときに番号をタップ →「はい」で受け渡し済みになり、番号が空きます。</p>
         <div id="ticket-grid" class="ticket-grid"></div>
         <p id="ticket-empty" class="muted center">待ちはありません</p>
         <h3>空き番号</h3>
@@ -142,6 +142,12 @@
           <label>現在の価格(円)<input id="set-price" type="number" inputmode="numeric" min="0" step="10"></label>
           <button type="button" id="save-price" class="primary">価格を変更</button>
           <p class="muted">変更後の会計から新しい価格で記録されます。</p>
+        </div>
+        <div class="setting">
+          <h3 class="setting-title">使えない整理券番号</h3>
+          <p class="muted">紛失した番号をタップして無効にします。無効の番号は自動で割り当てません。もう一度タップすると戻ります。</p>
+          <div id="disabled-tickets" class="ticket-toggles"></div>
+          <p class="muted" id="disabled-summary"></p>
         </div>
         <div class="setting">
           <label>合計費用(円)<input id="set-cost" type="number" inputmode="numeric" min="0"></label>

@@ -244,3 +244,13 @@ button:active:not(:disabled) { transform: scale(.96); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* 無効な整理券番号 */
+.setting-title { margin: 0 0 4px; font-size: 1rem; }
+.ticket-toggles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0; }
+.ticket-toggles button { min-height: 44px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-weight: 700; font-variant-numeric: tabular-nums; }
+.ticket-toggles button[aria-pressed="true"] { background: var(--warn-bg); border-color: var(--danger); color: var(--danger); text-decoration: line-through; }
+.free-tickets span.off { text-decoration: line-through; color: var(--danger); border-color: var(--danger); opacity: .6; }
+.modal-actions button.primary { background: var(--primary); color: var(--primary-text); border: 0; font-weight: 700; }
+.modal-actions button.danger { background: none; border-color: var(--danger); color: var(--danger); }
+.ticket.noticket .num { font-size: 1.2rem; line-height: 2.2rem; }

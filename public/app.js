@@ -15,7 +15,7 @@ const AGES = ["中学生以下", "高校生", "大学生", "大人"];
 const AGE_ALIAS = { "小学生以下": "中学生以下", "中学生": "中学生以下" };
 const GENDERS = ["男", "女", "混合"];
 const TICKET_MAX = 20;
-const DEFAULT_SETTINGS = { price: 400, totalCost: 55852 };
+const DEFAULT_SETTINGS = { price: 400, totalCost: 55852, disabledTickets: [] };
 
 // ---- Firebase ----
 const app = initializeApp(firebaseConfig);
@@ -59,9 +59,12 @@ function usedTickets(exceptId = null) {
   for (const o of waiting()) if (o.ticket != null && o.id !== exceptId) s.add(o.ticket);
   return s;
 }
+// 紛失などで使えない整理券番号
+function disabledSet() { return new Set((state.settings.disabledTickets || []).map(Number)); }
 function nextTicket() {
   const used = usedTickets();
-  for (let i = 1; i <= TICKET_MAX; i++) if (!used.has(i)) return i;
+  const off = disabledSet();
+  for (let i = 1; i <= TICKET_MAX; i++) if (!used.has(i) && !off.has(i)) return i;
   return null;
 }
 
@@ -106,6 +109,7 @@ function openModal(build) {
   build(box);
   $("modal").classList.remove("closing");
   $("modal").hidden = false;
+  $("toast").hidden = true;
 }
 function closeModal() {
   const m = $("modal");
@@ -284,7 +288,7 @@ $("confirm-btn").onclick = () => {
       box.appendChild(el("p", { class: "muted", text: "この番号の整理券を渡してください" }));
       box.appendChild(el("div", { class: "ticket-big", text: String(ticket) }));
     } else {
-      box.appendChild(el("div", { class: "warn", text: `整理券が${TICKET_MAX}枚すべて使用中です。会計は記録しました。番号は履歴から後で付けられます。` }));
+      box.appendChild(el("div", { class: "warn", text: `使える整理券(${TICKET_MAX - disabledSet().size}枚)がすべて使用中です。会計は記録しました。番号は履歴から後で付けられます。` }));
     }
     box.appendChild(el("p", { class: "center", text: `${data.cups}杯 ${yen(data.amount)} / ${data.age}・${data.gender}${data.withChild ? "・子連れ" : ""}` }));
     box.appendChild(el("button", { type: "button", class: "primary big", text: "OK", onclick: closeModal }));
@@ -307,13 +311,7 @@ function renderTickets() {
       el("div", { class: "sub", text: `${o.cups}杯・${mins}分待ち` }),
     ]);
     if (isNew && MOTION_OK) card.classList.add("pop");
-    card.onclick = () => {
-      if (card.disabled) return;
-      card.disabled = true;
-      if (!MOTION_OK) return markHanded(o);
-      card.classList.add("leaving");
-      setTimeout(() => markHanded(o), 220);
-    };
+    card.onclick = () => confirmHanded(o, card);
     grid.appendChild(card);
   }
   ticketsPrimed = state.loaded;
@@ -321,11 +319,35 @@ function renderTickets() {
   const used = usedTickets();
   const free = $("free-tickets");
   free.innerHTML = "";
-  for (let i = 1; i <= TICKET_MAX; i++) if (!used.has(i)) free.appendChild(el("span", { text: String(i) }));
+  const off = disabledSet();
+  for (let i = 1; i <= TICKET_MAX; i++) {
+    if (off.has(i)) free.appendChild(el("span", { class: "off", text: String(i), title: "無効" }));
+    else if (!used.has(i)) free.appendChild(el("span", { text: String(i) }));
+  }
   const n = list.length;
   $("reg-waiting").textContent = n;
   $("tab-waiting").hidden = n === 0;
   $("tab-waiting").textContent = n;
+}
+
+// 誤タップ防止: 受け渡しの前に確認する
+function confirmHanded(o, card) {
+  const label = o.ticket == null ? "番号なし" : `${o.ticket} 番`;
+  openModal((box) => {
+    box.appendChild(el("h2", { text: "受け渡し完了しましたか?" }));
+    box.appendChild(el("div", { class: "ticket-big", text: o.ticket == null ? "—" : String(o.ticket) }));
+    box.appendChild(el("p", { class: "center", text: `${label}・${o.cups}杯・${hm(o.createdAt)} の会計` }));
+    box.appendChild(el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", text: "いいえ", onclick: closeModal }),
+      el("button", { type: "button", class: "primary", text: "はい", onclick: () => {
+        closeModal();
+        if (!MOTION_OK || !card.isConnected) return markHanded(o);
+        card.disabled = true;
+        card.classList.add("leaving");
+        setTimeout(() => markHanded(o), 220);
+      } }),
+    ]));
+  });
 }
 
 // 待ちに戻すとき、元の番号が他で使われていたら空き番号に振り直す
@@ -408,14 +430,17 @@ function openEdit(o) {
 
     const sel = el("select", { "aria-label": "整理券番号" });
     sel.appendChild(el("option", { value: "", text: "番号なし" }));
-    for (let i = 1; i <= TICKET_MAX; i++) sel.appendChild(el("option", { value: String(i), text: i + " 番" }));
+    const offTickets = disabledSet();
+    for (let i = 1; i <= TICKET_MAX; i++) sel.appendChild(el("option", { value: String(i), text: i + " 番" + (offTickets.has(i) ? "(無効)" : "") }));
     sel.value = draft.ticket == null ? "" : String(draft.ticket);
     const warn = el("div", { class: "warn", hidden: "" });
     sel.onchange = () => {
       draft.ticket = sel.value === "" ? null : Number(sel.value);
       const clash = draft.ticket != null && !o.handedAt && usedTickets(o.id).has(draft.ticket);
-      warn.hidden = !clash;
-      warn.textContent = clash ? `${draft.ticket} 番は別の待ちの会計で使用中です。保存すると番号が重なります。` : "";
+      const off = draft.ticket != null && offTickets.has(draft.ticket);
+      warn.hidden = !clash && !off;
+      warn.textContent = clash ? `${draft.ticket} 番は別の待ちの会計で使用中です。保存すると番号が重なります。`
+        : off ? `${draft.ticket} 番は無効に設定されています(紛失など)。` : "";
     };
     box.appendChild(el("div", { class: "field" }, [el("div", { class: "field-label", text: "整理券番号" }), sel, warn]));
 
@@ -747,7 +772,29 @@ function renderSync() {
 window.addEventListener("online", renderSync);
 window.addEventListener("offline", renderSync);
 
+function renderDisabledTickets() {
+  const box = $("disabled-tickets");
+  const off = disabledSet();
+  box.innerHTML = "";
+  for (let i = 1; i <= TICKET_MAX; i++) {
+    const b = el("button", { type: "button", "aria-pressed": String(off.has(i)), "aria-label": `${i} 番を${off.has(i) ? "有効" : "無効"}にする`, text: String(i) });
+    b.onclick = () => {
+      const next = new Set(disabledSet());
+      if (next.has(i)) next.delete(i); else next.add(i);
+      const list = [...next].sort((a, b2) => a - b2);
+      state.settings.disabledTickets = list;
+      write(setDoc(settingsRef, { disabledTickets: list }, { merge: true }));
+      renderAll();
+      const inUse = waiting().some((o) => o.ticket === i);
+      toast(next.has(i) ? `${i} 番を無効にしました` + (inUse ? "(今の待ちの会計はそのまま)" : "") : `${i} 番を使えるようにしました`);
+    };
+    box.appendChild(b);
+  }
+  $("disabled-summary").textContent = off.size ? `無効: ${[...off].sort((a, b) => a - b).join("・")} 番(使えるのは ${TICKET_MAX - off.size} 枚)` : "無効な番号はありません";
+}
+
 function renderAll() {
+  renderDisabledTickets();
   renderForm();
   renderTickets();
   renderHistory();
