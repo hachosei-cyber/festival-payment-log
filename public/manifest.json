@@ -1,0 +1,9 @@
+{
+  "name": "HAC 会計記録",
+  "short_name": "会計記録",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f6fb",
+  "theme_color": "#3b4cca",
+  "icons": [{ "src": "icon.png", "sizes": "512x512", "type": "image/png" }]
+}

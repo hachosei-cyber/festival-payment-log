@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 登録した Google アカウントだけが読み書きできる。増やすときは public/firebase-config.js も直す
+    function allowed() {
+      return request.auth != null
+        && request.auth.token.email in ["hac.hosei@gmail.com", "kuritaku2202@gmail.com"];
+    }
+    match /{document=**} {
+      allow read, write: if allowed();
+    }
+  }
+}

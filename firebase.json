@@ -1,0 +1,49 @@
+{
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*"
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "HAC Register",
+        "supportEmail": "hac.hosei@gmail.com",
+        "authorizedRedirectUris": [
+          "https://hac-register-2026.web.app/__/auth/handler",
+          "https://hac-register-2026.firebaseapp.com/__/auth/handler"
+        ]
+      }
+    }
+  },
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "hosting": {
+      "port": 5055
+    },
+    "ui": {
+      "enabled": false
+    }
+  }
+}

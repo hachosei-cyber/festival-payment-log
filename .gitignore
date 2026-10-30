@@ -1,0 +1,6 @@
+.firebase/
+.claude/
+.playwright-mcp/
+*.log
+.DS_Store
+node_modules/
