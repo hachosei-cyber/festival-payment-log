@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#3b4cca">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="icon" href="icon.png">
+  <link rel="icon" href="favicon.png">
   <meta name="apple-mobile-web-app-title" content="会計記録">
   <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
   <title>HAC 会計記録</title>
 </head>
@@ -17,6 +17,7 @@
   <!-- ログイン画面 -->
   <section id="login-view" class="view" hidden>
     <div class="login-box">
+      <img src="logo.png" alt="HAC Hosei AI Community" class="login-logo" width="220" height="220">
       <h1>HAC 会計記録</h1>
       <p class="muted">バタフライピーソーダ 会計記録アプリ</p>
       <button type="button" id="google-login" class="primary big">Google でログイン</button>
@@ -28,7 +29,7 @@
   <!-- メイン画面 -->
   <div id="main-view" hidden>
     <header class="topbar">
-      <div class="topbar-title">HAC 会計記録</div>
+      <div class="topbar-title"><img src="favicon.png" alt="" width="24" height="24" class="topbar-logo">HAC 会計記録</div>
       <div id="sync-badge" class="badge">接続中…</div>
     </header>
 
@@ -106,18 +107,38 @@
       <!-- 集計 -->
       <section id="tab-summary" class="tab" hidden>
         <div class="cards">
-          <div class="card"><div class="muted">今日の杯数</div><div class="big-num" id="sum-today-cups">0</div></div>
-          <div class="card"><div class="muted">今日の売上</div><div class="big-num" id="sum-today-sales">¥0</div></div>
-          <div class="card"><div class="muted">累計の杯数</div><div class="big-num" id="sum-total-cups">0</div></div>
-          <div class="card"><div class="muted">累計の売上</div><div class="big-num" id="sum-total-sales">¥0</div></div>
-          <div class="card wide"><div class="muted">利益(累計売上 − 合計費用)</div><div class="big-num" id="sum-profit">¥0</div></div>
+          <div class="card anim"><div class="muted">今日の杯数</div><div class="big-num" id="sum-today-cups">0</div></div>
+          <div class="card anim"><div class="muted">今日の売上</div><div class="big-num" id="sum-today-sales">¥0</div></div>
+          <div class="card anim"><div class="muted">累計の杯数</div><div class="big-num" id="sum-total-cups">0</div></div>
+          <div class="card anim"><div class="muted">累計の売上</div><div class="big-num" id="sum-total-sales">¥0</div></div>
+          <div class="card wide anim">
+            <div class="muted">利益(累計売上 − 合計費用)</div>
+            <div class="big-num" id="sum-profit">¥0</div>
+            <div class="be-meter" aria-hidden="true"><div class="be-fill" id="be-fill"></div></div>
+            <div class="muted" id="sum-breakeven"></div>
+          </div>
         </div>
-        <h3>今日の時間帯別</h3>
-        <table class="table"><thead><tr><th>時間</th><th>件数</th><th>杯数</th></tr></thead><tbody id="sum-hourly"></tbody></table>
+
+        <div class="chart-card anim">
+          <div class="chart-head">
+            <h3>累積利益の推移(15分ごと)</h3>
+            <div class="seg" id="chart-days" role="tablist" aria-label="表示する日"></div>
+          </div>
+          <div class="chart-wrap" id="chart-wrap">
+            <svg id="profit-chart" role="img" aria-labelledby="chart-desc"></svg>
+            <div class="chart-tip" id="chart-tip" hidden></div>
+          </div>
+          <p class="muted" id="chart-desc"></p>
+          <details class="rules">
+            <summary>15分ごとの表</summary>
+            <table class="table"><thead><tr><th>時間</th><th>件数</th><th>杯数</th><th>累積利益</th></tr></thead><tbody id="sum-bins"></tbody></table>
+          </details>
+        </div>
+
         <h3>年代別(累計)</h3>
-        <table class="table"><thead><tr><th>年代</th><th>件数</th><th>杯数</th></tr></thead><tbody id="sum-age"></tbody></table>
+        <table class="table anim"><thead><tr><th>年代</th><th>件数</th><th>杯数</th></tr></thead><tbody id="sum-age"></tbody></table>
         <h3>性別・子連れ(累計)</h3>
-        <table class="table"><thead><tr><th>区分</th><th>件数</th><th>杯数</th></tr></thead><tbody id="sum-gender"></tbody></table>
+        <table class="table anim"><thead><tr><th>区分</th><th>件数</th><th>杯数</th></tr></thead><tbody id="sum-gender"></tbody></table>
         <p class="muted" id="sum-wait"></p>
       </section>
 

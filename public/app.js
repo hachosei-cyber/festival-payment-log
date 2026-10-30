@@ -185,6 +185,8 @@ document.querySelectorAll(".tabbar button").forEach((b) => {
     document.querySelectorAll(".tabbar button").forEach((x) => x.classList.toggle("active", x === b));
     document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== "tab-" + b.dataset.tab; });
     window.scrollTo(0, 0);
+    if (b.dataset.tab === "summary") openSummary();
+    else summaryUI.visible = false;
   });
 });
 
@@ -421,28 +423,89 @@ function openEdit(o) {
 }
 
 // ---- 集計 ----
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const SVGNS = "http://www.w3.org/2000/svg";
+const BIN = 15 * 60000;
+const summaryUI = { visible: false, day: null, shown: {}, intro: false };
+
 function agg(list) {
   return { n: list.length, cups: list.reduce((s, o) => s + o.cups, 0), sales: list.reduce((s, o) => s + o.amount, 0) };
 }
+// 数字を前の値から新しい値までカウントアップする
+function countUp(id, to, fmt) {
+  const node = $(id);
+  const from = summaryUI.shown[id] ?? 0;
+  summaryUI.shown[id] = to;
+  if (reduceMotion || !summaryUI.visible || from === to) { node.textContent = fmt(to); return; }
+  const t0 = performance.now(), dur = 800;
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / dur);
+    const e = 1 - Math.pow(1 - k, 3);
+    node.textContent = fmt(from + (to - from) * e);
+    if (k < 1 && summaryUI.shown[id] === to) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+const man = (v) => {
+  // グラフの軸用: 1万円単位
+  const a = Math.abs(v) / 10000;
+  const s = a >= 10 || Number.isInteger(a) ? a.toFixed(0) : a.toFixed(1);
+  return (v < 0 ? "−" : "") + s + "万";
+};
+const md = (key) => { const [, m, d] = key.split("-"); return `${Number(m)}/${Number(d)}`; };
+
+function openSummary() {
+  summaryUI.visible = true;
+  summaryUI.shown = {};
+  summaryUI.intro = true;
+  document.querySelectorAll("#tab-summary .anim").forEach((n, i) => {
+    n.style.setProperty("--i", i);
+    n.classList.remove("play");
+    void n.offsetWidth;
+    n.classList.add("play");
+  });
+  renderSummary();
+  summaryUI.intro = false;
+}
+
 function renderSummary() {
   const all = active();
   const today = all.filter((o) => o.date === todayKey());
   const t = agg(today), a = agg(all);
-  $("sum-today-cups").textContent = t.cups;
-  $("sum-today-sales").textContent = yen(t.sales);
-  $("sum-total-cups").textContent = a.cups;
-  $("sum-total-sales").textContent = yen(a.sales);
-  $("sum-profit").textContent = yen(a.sales - state.settings.totalCost);
+  const cost = state.settings.totalCost;
+  const profit = a.sales - cost;
+  countUp("sum-today-cups", t.cups, (v) => String(Math.round(v)));
+  countUp("sum-today-sales", t.sales, yen);
+  countUp("sum-total-cups", a.cups, (v) => String(Math.round(v)));
+  countUp("sum-total-sales", a.sales, yen);
+  countUp("sum-profit", profit, yen);
+  $("sum-profit").classList.toggle("plus", profit >= 0);
   $("reg-today-cups").textContent = t.cups;
   $("reg-price").textContent = state.settings.price;
+
+  const ratio = cost > 0 ? Math.min(1, a.sales / cost) : 1;
+  const bar = $("be-fill");
+  if (summaryUI.intro && !reduceMotion) {
+    // いったん 0 に戻してから伸ばす
+    bar.style.transition = "none";
+    bar.style.width = "0";
+    void bar.offsetWidth;
+    bar.style.transition = "";
+    requestAnimationFrame(() => { bar.style.width = ratio * 100 + "%"; });
+  } else bar.style.width = ratio * 100 + "%";
+  $("be-fill").classList.toggle("done", profit >= 0);
+  if (profit < 0) {
+    const cups = Math.ceil(-profit / Math.max(1, state.settings.price));
+    $("sum-breakeven").textContent = `損益分岐まで あと ${yen(-profit)}(今の価格で約 ${cups} 杯)`;
+  } else {
+    $("sum-breakeven").textContent = `損益分岐を超えました(+${yen(profit)})`;
+  }
 
   const fill = (tbodyId, rows) => {
     const tb = $(tbodyId);
     tb.innerHTML = "";
     for (const [label, s] of rows) tb.appendChild(el("tr", {}, [el("td", { text: label }), el("td", { text: String(s.n) }), el("td", { text: String(s.cups) })]));
   };
-  const hours = [...new Set(today.map((o) => o.createdAt.getHours()))].sort((x, y) => x - y);
-  fill("sum-hourly", hours.map((h) => [`${pad(h)}時台`, agg(today.filter((o) => o.createdAt.getHours() === h))]));
   fill("sum-age", AGES.map((g) => [g, agg(all.filter((o) => o.age === g))]));
   fill("sum-gender", [
     ...GENDERS.map((g) => [g, agg(all.filter((o) => o.gender === g))]),
@@ -453,7 +516,190 @@ function renderSummary() {
     const avg = handed.reduce((s, o) => s + (o.handedAt - o.createdAt), 0) / handed.length / 60000;
     $("sum-wait").textContent = `平均待ち時間 ${avg.toFixed(1)} 分(受け渡し済み ${handed.length} 件)`;
   } else $("sum-wait").textContent = "";
+
+  renderChart(all, cost);
 }
+
+// 選んだ日の15分ごとの累積利益。前の日までの売上も引き継ぐ
+function profitSeries(all, day, cost) {
+  const dayOrders = all.filter((o) => o.date === day).sort((x, y) => x.createdAt - y.createdAt);
+  const base = all.filter((o) => o.date < day).reduce((s, o) => s + o.amount, 0);
+  if (!dayOrders.length) return null;
+  const floor = (ms) => Math.floor(ms / BIN) * BIN;
+  const start = floor(dayOrders[0].createdAt.getTime());
+  let last = dayOrders[dayOrders.length - 1].createdAt.getTime();
+  if (day === todayKey()) last = Math.max(last, Date.now());
+  const end = floor(last) + BIN;
+  const pts = [{ t: start, profit: base - cost, n: 0, cups: 0 }];
+  let cum = base, i = 0;
+  for (let b = start; b < end; b += BIN) {
+    let n = 0, cups = 0;
+    while (i < dayOrders.length && dayOrders[i].createdAt.getTime() < b + BIN) {
+      cum += dayOrders[i].amount; cups += dayOrders[i].cups; n++; i++;
+    }
+    pts.push({ t: b + BIN, from: b, profit: cum - cost, n, cups });
+  }
+  return pts;
+}
+
+function svg(tag, attrs = {}, text) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function renderChart(all, cost) {
+  const days = [...new Set(all.map((o) => o.date))].sort();
+  if (!days.includes(summaryUI.day)) summaryUI.day = days.includes(todayKey()) ? todayKey() : days[days.length - 1] ?? null;
+
+  const seg = $("chart-days");
+  seg.innerHTML = "";
+  days.forEach((d, idx) => {
+    const b = el("button", { type: "button", role: "tab", "aria-selected": String(d === summaryUI.day), text: `${md(d)}(${idx + 1}日目)` });
+    b.onclick = () => { summaryUI.day = d; summaryUI.intro = true; renderChart(active(), state.settings.totalCost); summaryUI.intro = false; };
+    seg.appendChild(b);
+  });
+
+  const chart = $("profit-chart");
+  chart.innerHTML = "";
+  $("chart-tip").hidden = true;
+  const tbody = $("sum-bins");
+  tbody.innerHTML = "";
+  const pts = summaryUI.day ? profitSeries(all, summaryUI.day, cost) : null;
+  if (!pts) {
+    $("chart-desc").textContent = "会計が入るとグラフが表示されます。";
+    chart.setAttribute("viewBox", "0 0 10 1");
+    return;
+  }
+
+  const W = Math.max(300, $("chart-wrap").clientWidth || 340), H = 240;
+  const m = { l: 44, r: 14, t: 18, b: 28 };
+  chart.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  chart.setAttribute("width", W);
+  chart.setAttribute("height", H);
+  const ys = pts.map((p) => p.profit);
+  let lo = Math.min(0, ...ys), hi = Math.max(0, ...ys);
+  const pad = Math.max(2000, (hi - lo) * 0.1);
+  lo -= pad; hi += pad;
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+  const x = (t) => m.l + (t1 === t0 ? 0 : ((t - t0) / (t1 - t0)) * (W - m.l - m.r));
+  const y = (v) => m.t + ((hi - v) / (hi - lo)) * (H - m.t - m.b);
+
+  // 目盛り(1万円単位のきりのよい値)
+  const span = hi - lo;
+  const stepY = [5000, 10000, 20000, 50000, 100000].find((s) => span / s <= 5) || 200000;
+  const grid = svg("g", { class: "grid" });
+  for (let v = Math.ceil(lo / stepY) * stepY; v <= hi; v += stepY) {
+    if (v === 0) continue;
+    grid.appendChild(svg("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }));
+    grid.appendChild(svg("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end" }, man(v)));
+  }
+  const hourMs = 3600000;
+  const stepX = t1 - t0 > 6 * hourMs ? 2 * hourMs : hourMs;
+  let tick = Math.ceil(t0 / hourMs) * hourMs;
+  while (new Date(tick).getHours() % (stepX / hourMs) !== 0) tick += hourMs;
+  for (let tt = tick; tt <= t1; tt += stepX) {
+    grid.appendChild(svg("text", { x: x(tt), y: H - 8, "text-anchor": "middle" }, hm(new Date(tt))));
+  }
+  if (t1 - t0 < hourMs) {
+    grid.appendChild(svg("text", { x: x(t0), y: H - 8, "text-anchor": "start" }, hm(new Date(t0))));
+    grid.appendChild(svg("text", { x: x(t1), y: H - 8, "text-anchor": "end" }, hm(new Date(t1))));
+  }
+  chart.appendChild(grid);
+
+  // 損益分岐線(利益 0 円)
+  const be = svg("g", { class: "breakeven" });
+  be.appendChild(svg("line", { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0) }));
+  const leftGap = Math.abs(y(pts[0].profit) - y(0)), rightGap = Math.abs(y(pts[pts.length - 1].profit) - y(0));
+  const onLeft = leftGap > rightGap;
+  const sideVal = onLeft ? pts[0].profit : pts[pts.length - 1].profit;
+  be.appendChild(svg("text", {
+    x: onLeft ? m.l + 4 : W - m.r, y: sideVal > 0 ? y(0) + 15 : y(0) - 6, "text-anchor": onLeft ? "start" : "end",
+  }, "損益分岐 ¥0"));
+  chart.appendChild(be);
+
+  // 利益の線と面
+  const d = pts.map((p, k) => `${k ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.profit).toFixed(1)}`).join(" ");
+  const area = svg("path", { class: "area", d: `${d} L${x(t1).toFixed(1)},${y(lo)} L${x(t0).toFixed(1)},${y(lo)} Z` });
+  const line = svg("path", { class: "line", d });
+  chart.appendChild(area);
+  chart.appendChild(line);
+  const lastP = pts[pts.length - 1];
+  const endDot = svg("circle", { class: "end-dot", cx: x(lastP.t), cy: y(lastP.profit), r: 5 });
+  chart.appendChild(endDot);
+  const endLabel = svg("text", { class: "end-label", x: x(lastP.t) - 8, y: y(lastP.profit) + (lastP.profit < 0 ? 18 : -10), "text-anchor": "end" }, yen(lastP.profit));
+  chart.appendChild(endLabel);
+
+  if (summaryUI.intro && !reduceMotion) {
+    const len = line.getTotalLength();
+    line.style.strokeDasharray = `${len}`;
+    line.style.strokeDashoffset = `${len}`;
+    area.style.opacity = "0";
+    endDot.style.opacity = "0";
+    endLabel.style.opacity = "0";
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      line.style.transition = "stroke-dashoffset 1.1s cubic-bezier(.2,.7,.2,1)";
+      line.style.strokeDashoffset = "0";
+      area.style.transition = "opacity .6s ease .5s";
+      area.style.opacity = "";
+      for (const n of [endDot, endLabel]) { n.style.transition = "opacity .3s ease 1s"; n.style.opacity = ""; }
+    }));
+  }
+
+  // タップ・ホバーで値を出す
+  const cross = svg("line", { class: "cross", y1: m.t, y2: H - m.b, visibility: "hidden" });
+  const hoverDot = svg("circle", { class: "hover-dot", r: 5, visibility: "hidden" });
+  chart.appendChild(cross);
+  chart.appendChild(hoverDot);
+  const hit = svg("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: H, fill: "transparent" });
+  chart.appendChild(hit);
+  const tip = $("chart-tip");
+  const show = (ev) => {
+    const r = chart.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * W;
+    let best = pts[0];
+    for (const p of pts) if (Math.abs(x(p.t) - px) < Math.abs(x(best.t) - px)) best = p;
+    const cx = x(best.t), cy = y(best.profit);
+    cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+    hoverDot.setAttribute("cx", cx); hoverDot.setAttribute("cy", cy); hoverDot.setAttribute("visibility", "visible");
+    tip.innerHTML = "";
+    tip.appendChild(el("div", { class: "tip-time", text: best.from != null ? `${hm(new Date(best.from))}〜${hm(new Date(best.t))}` : `${hm(new Date(best.t))} 開始時点` }));
+    tip.appendChild(el("div", { class: "tip-val", text: `累積利益 ${yen(best.profit)}` }));
+    if (best.from != null) tip.appendChild(el("div", { text: `この15分: ${best.n}件・${best.cups}杯` }));
+    tip.hidden = false;
+    const left = (cx / W) * r.width;
+    tip.style.left = Math.min(Math.max(left, 70), r.width - 70) + "px";
+    tip.style.top = Math.max(0, (cy / H) * r.height - 64) + "px";
+  };
+  const hide = () => { cross.setAttribute("visibility", "hidden"); hoverDot.setAttribute("visibility", "hidden"); tip.hidden = true; };
+  hit.addEventListener("pointermove", show);
+  hit.addEventListener("pointerdown", show);
+  hit.addEventListener("pointerleave", (ev) => { if (ev.pointerType === "mouse") hide(); });
+  chartOutsideHide = (ev) => { if (!$("chart-wrap").contains(ev.target)) hide(); };
+
+  const first = pts[0], fin = lastP;
+  const crossing = pts.find((p, k) => k > 0 && pts[k - 1].profit < 0 && p.profit >= 0);
+  $("chart-desc").textContent =
+    `${md(summaryUI.day)} ${hm(new Date(t0))}〜${hm(new Date(t1))}。累積利益は ${yen(first.profit)} から ${yen(fin.profit)}。` +
+    (crossing ? `${hm(new Date(crossing.from))}〜${hm(new Date(crossing.t))} の間に損益分岐を超えました。` : fin.profit < 0 ? "まだ損益分岐の手前です。" : "");
+
+  for (const p of pts.slice(1)) {
+    tbody.appendChild(el("tr", {}, [
+      el("td", { text: `${hm(new Date(p.from))}〜` }),
+      el("td", { text: String(p.n) }),
+      el("td", { text: String(p.cups) }),
+      el("td", { text: yen(p.profit) }),
+    ]));
+  }
+}
+let chartOutsideHide = null;
+document.addEventListener("pointerdown", (ev) => { if (chartOutsideHide) chartOutsideHide(ev); });
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (summaryUI.visible) renderChart(active(), state.settings.totalCost); }, 150);
+});
 
 // ---- 同期状態 ----
 function renderSync() {
