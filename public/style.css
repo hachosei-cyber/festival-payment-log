@@ -260,3 +260,4 @@ button:active:not(:disabled) { transform: scale(.96); }
 .ticket.late { border-color: var(--danger); border-width: 3px; background: var(--warn-bg); animation: late-glow 2s ease-in-out infinite; }
 .ticket.late .num { color: var(--danger); }
 .ticket.late .sub { color: var(--danger); font-weight: 700; }
+#profit-chart .grid .vtick { stroke: var(--muted); }

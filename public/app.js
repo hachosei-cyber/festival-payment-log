@@ -487,7 +487,6 @@ function openEdit(o) {
 // ---- 集計 ----
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const SVGNS = "http://www.w3.org/2000/svg";
-const BIN = 15 * 60000;
 const summaryUI = { visible: false, day: null, shown: {}, intro: false };
 
 function agg(list) {
@@ -582,26 +581,29 @@ function renderSummary() {
   renderChart(all, cost);
 }
 
-// 選んだ日の15分ごとの累積利益。前の日までの売上も引き継ぐ
+// グラフの表示範囲(営業時間)
+const CHART_FROM = "10:00", CHART_TO = "17:00";
+const hms = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+// 選んだ日の、購入ごとの累積利益。前の日までの売上と、10:00 より前の売上は開始値に含める
 function profitSeries(all, day, cost) {
+  const from = new Date(`${day}T${CHART_FROM}:00`).getTime();
+  const to = new Date(`${day}T${CHART_TO}:00`).getTime();
   const dayOrders = all.filter((o) => o.date === day).sort((x, y) => x.createdAt - y.createdAt);
-  const base = all.filter((o) => o.date < day).reduce((s, o) => s + o.amount, 0);
-  if (!dayOrders.length) return null;
-  const floor = (ms) => Math.floor(ms / BIN) * BIN;
-  const start = floor(dayOrders[0].createdAt.getTime());
-  let last = dayOrders[dayOrders.length - 1].createdAt.getTime();
-  if (day === todayKey()) last = Math.max(last, Date.now());
-  const end = floor(last) + BIN;
-  const pts = [{ t: start, profit: base - cost, n: 0, cups: 0 }];
-  let cum = base, i = 0;
-  for (let b = start; b < end; b += BIN) {
-    let n = 0, cups = 0;
-    while (i < dayOrders.length && dayOrders[i].createdAt.getTime() < b + BIN) {
-      cum += dayOrders[i].amount; cups += dayOrders[i].cups; n++; i++;
-    }
-    pts.push({ t: b + BIN, from: b, profit: cum - cost, n, cups });
+  let cum = all.filter((o) => o.date < day).reduce((s, o) => s + o.amount, 0);
+  let before = 0, after = 0;
+  const sales = [];
+  for (const o of dayOrders) {
+    const t = o.createdAt.getTime();
+    if (t < from) { cum += o.amount; before++; continue; }
+    if (t > to) { after++; continue; }
+    cum += o.amount;
+    sales.push({ t, profit: cum - cost, cups: o.cups, amount: o.amount });
   }
-  return pts;
+  const start = { t: from, profit: sales.length ? sales[0].profit - sales[0].amount : cum - cost, start: true };
+  const lastT = sales.length ? sales[sales.length - 1].t : from;
+  const endT = day === todayKey() ? Math.min(to, Math.max(lastT, Date.now())) : to;
+  return { from, to, endT, pts: [start, ...sales], before, after };
 }
 
 function svg(tag, attrs = {}, text) {
@@ -628,12 +630,12 @@ function renderChart(all, cost) {
   $("chart-tip").hidden = true;
   const tbody = $("sum-bins");
   tbody.innerHTML = "";
-  const pts = summaryUI.day ? profitSeries(all, summaryUI.day, cost) : null;
-  if (!pts) {
+  if (!summaryUI.day) {
     $("chart-desc").textContent = "会計が入るとグラフが表示されます。";
     chart.setAttribute("viewBox", "0 0 10 1");
     return;
   }
+  const { from, to, endT, pts, before, after } = profitSeries(all, summaryUI.day, cost);
 
   const W = Math.max(300, $("chart-wrap").clientWidth || 340), H = 240;
   const m = { l: 44, r: 14, t: 18, b: 28 };
@@ -644,11 +646,10 @@ function renderChart(all, cost) {
   let lo = Math.min(0, ...ys), hi = Math.max(0, ...ys);
   const pad = Math.max(2000, (hi - lo) * 0.1);
   lo -= pad; hi += pad;
-  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
-  const x = (t) => m.l + (t1 === t0 ? 0 : ((t - t0) / (t1 - t0)) * (W - m.l - m.r));
+  const x = (t) => m.l + ((t - from) / (to - from)) * (W - m.l - m.r);
   const y = (v) => m.t + ((hi - v) / (hi - lo)) * (H - m.t - m.b);
 
-  // 目盛り(1万円単位のきりのよい値)
+  // 目盛り
   const span = hi - lo;
   const stepY = [5000, 10000, 20000, 50000, 100000].find((s) => span / s <= 5) || 200000;
   const grid = svg("g", { class: "grid" });
@@ -658,39 +659,37 @@ function renderChart(all, cost) {
     grid.appendChild(svg("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end" }, man(v)));
   }
   const hourMs = 3600000;
-  const stepX = t1 - t0 > 6 * hourMs ? 2 * hourMs : hourMs;
-  let tick = Math.ceil(t0 / hourMs) * hourMs;
-  while (new Date(tick).getHours() % (stepX / hourMs) !== 0) tick += hourMs;
-  for (let tt = tick; tt <= t1; tt += stepX) {
-    grid.appendChild(svg("text", { x: x(tt), y: H - 8, "text-anchor": "middle" }, hm(new Date(tt))));
-  }
-  if (t1 - t0 < hourMs) {
-    grid.appendChild(svg("text", { x: x(t0), y: H - 8, "text-anchor": "start" }, hm(new Date(t0))));
-    grid.appendChild(svg("text", { x: x(t1), y: H - 8, "text-anchor": "end" }, hm(new Date(t1))));
+  const wide = (W - m.l - m.r) / ((to - from) / hourMs) >= 40;
+  for (let tt = from; tt <= to; tt += hourMs) {
+    const d = new Date(tt);
+    const anchor = "middle";
+    grid.appendChild(svg("line", { class: "vtick", x1: x(tt), x2: x(tt), y1: H - m.b, y2: H - m.b + 4 }));
+    grid.appendChild(svg("text", { x: x(tt), y: H - 8, "text-anchor": anchor }, wide ? hm(d) : `${d.getHours()}時`));
   }
   chart.appendChild(grid);
 
   // 損益分岐線(利益 0 円)
+  const lastP = pts[pts.length - 1];
   const be = svg("g", { class: "breakeven" });
   be.appendChild(svg("line", { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0) }));
-  const leftGap = Math.abs(y(pts[0].profit) - y(0)), rightGap = Math.abs(y(pts[pts.length - 1].profit) - y(0));
-  const onLeft = leftGap > rightGap;
-  const sideVal = onLeft ? pts[0].profit : pts[pts.length - 1].profit;
+  const onLeft = Math.abs(y(pts[0].profit) - y(0)) > Math.abs(y(lastP.profit) - y(0));
+  const sideVal = onLeft ? pts[0].profit : lastP.profit;
   be.appendChild(svg("text", {
     x: onLeft ? m.l + 4 : W - m.r, y: sideVal > 0 ? y(0) + 15 : y(0) - 6, "text-anchor": onLeft ? "start" : "end",
   }, "損益分岐 ¥0"));
   chart.appendChild(be);
 
-  // 利益の線と面
-  const d = pts.map((p, k) => `${k ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.profit).toFixed(1)}`).join(" ");
-  const area = svg("path", { class: "area", d: `${d} L${x(t1).toFixed(1)},${y(lo)} L${x(t0).toFixed(1)},${y(lo)} Z` });
+  // 利益の線(購入のたびに段が上がる階段状)と面
+  let d = `M${x(pts[0].t).toFixed(1)},${y(pts[0].profit).toFixed(1)}`;
+  for (const p of pts.slice(1)) d += ` H${x(p.t).toFixed(1)} V${y(p.profit).toFixed(1)}`;
+  d += ` H${x(endT).toFixed(1)}`;
+  const area = svg("path", { class: "area", d: `${d} V${y(lo).toFixed(1)} H${x(from).toFixed(1)} Z` });
   const line = svg("path", { class: "line", d });
   chart.appendChild(area);
   chart.appendChild(line);
-  const lastP = pts[pts.length - 1];
-  const endDot = svg("circle", { class: "end-dot", cx: x(lastP.t), cy: y(lastP.profit), r: 5 });
+  const endDot = svg("circle", { class: "end-dot", cx: x(endT), cy: y(lastP.profit), r: 5 });
   chart.appendChild(endDot);
-  const endLabel = svg("text", { class: "end-label", x: x(lastP.t) - 8, y: y(lastP.profit) + (lastP.profit < 0 ? 18 : -10), "text-anchor": "end" }, yen(lastP.profit));
+  const endLabel = svg("text", { class: "end-label", x: x(endT) - 8, y: y(lastP.profit) + (lastP.profit < 0 ? 18 : -10), "text-anchor": "end" }, yen(lastP.profit));
   chart.appendChild(endLabel);
 
   if (summaryUI.intro && !reduceMotion) {
@@ -709,7 +708,7 @@ function renderChart(all, cost) {
     }));
   }
 
-  // タップ・ホバーで値を出す
+  // タップ・ホバーで、いちばん近い購入の値を出す
   const cross = svg("line", { class: "cross", y1: m.t, y2: H - m.b, visibility: "hidden" });
   const hoverDot = svg("circle", { class: "hover-dot", r: 5, visibility: "hidden" });
   chart.appendChild(cross);
@@ -726,9 +725,9 @@ function renderChart(all, cost) {
     cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
     hoverDot.setAttribute("cx", cx); hoverDot.setAttribute("cy", cy); hoverDot.setAttribute("visibility", "visible");
     tip.innerHTML = "";
-    tip.appendChild(el("div", { class: "tip-time", text: best.from != null ? `${hm(new Date(best.from))}〜${hm(new Date(best.t))}` : `${hm(new Date(best.t))} 開始時点` }));
+    tip.appendChild(el("div", { class: "tip-time", text: best.start ? `${CHART_FROM} 開始時点` : hms(new Date(best.t)) }));
+    if (!best.start) tip.appendChild(el("div", { text: `${best.cups}杯 ${yen(best.amount)}` }));
     tip.appendChild(el("div", { class: "tip-val", text: `累積利益 ${yen(best.profit)}` }));
-    if (best.from != null) tip.appendChild(el("div", { text: `この15分: ${best.n}件・${best.cups}杯` }));
     tip.hidden = false;
     const left = (cx / W) * r.width;
     tip.style.left = Math.min(Math.max(left, 70), r.width - 70) + "px";
@@ -740,17 +739,19 @@ function renderChart(all, cost) {
   hit.addEventListener("pointerleave", (ev) => { if (ev.pointerType === "mouse") hide(); });
   chartOutsideHide = (ev) => { if (!$("chart-wrap").contains(ev.target)) hide(); };
 
-  const first = pts[0], fin = lastP;
-  const crossing = pts.find((p, k) => k > 0 && pts[k - 1].profit < 0 && p.profit >= 0);
+  const sales = pts.slice(1);
+  const crossing = sales.find((p, k) => pts[k].profit < 0 && p.profit >= 0);
+  const outside = [before ? `${CHART_FROM} より前の ${before} 件は開始値に含めています` : "", after ? `${CHART_TO} より後の ${after} 件はグラフに入っていません` : ""].filter(Boolean).join("。");
   $("chart-desc").textContent =
-    `${md(summaryUI.day)} ${hm(new Date(t0))}〜${hm(new Date(t1))}。累積利益は ${yen(first.profit)} から ${yen(fin.profit)}。` +
-    (crossing ? `${hm(new Date(crossing.from))}〜${hm(new Date(crossing.t))} の間に損益分岐を超えました。` : fin.profit < 0 ? "まだ損益分岐の手前です。" : "");
+    `${md(summaryUI.day)} ${CHART_FROM}〜${CHART_TO}、購入 ${sales.length} 件。累積利益は ${yen(pts[0].profit)} から ${yen(lastP.profit)}。` +
+    (crossing ? `${hms(new Date(crossing.t))} の会計で損益分岐を超えました。` : lastP.profit < 0 ? "まだ損益分岐の手前です。" : "") +
+    (outside ? outside + "。" : "");
 
-  for (const p of pts.slice(1)) {
+  for (const p of sales) {
     tbody.appendChild(el("tr", {}, [
-      el("td", { text: `${hm(new Date(p.from))}〜` }),
-      el("td", { text: String(p.n) }),
+      el("td", { text: hms(new Date(p.t)) }),
       el("td", { text: String(p.cups) }),
+      el("td", { text: yen(p.amount) }),
       el("td", { text: yen(p.profit) }),
     ]));
   }
